@@ -5,7 +5,6 @@ import android.graphics.BitmapFactory
 import android.media.MediaScannerConnection
 import android.os.Environment
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
@@ -40,7 +39,8 @@ fun HomeScreen(user: FirebaseUser, onBackToMenu: () -> Unit, onLogout: () -> Uni
     var randomImageRes by remember { mutableStateOf(memeImages.random()) }
     val memeBitmap = remember(randomImageRes) {
         try {
-            BitmapFactory.decodeResource(context.resources, randomImageRes)
+            val original = BitmapFactory.decodeResource(context.resources, randomImageRes)
+            resizeBitmap(original, 1024)
         } catch (e: Exception) {
             null
         }
@@ -97,29 +97,26 @@ fun HomeScreen(user: FirebaseUser, onBackToMenu: () -> Unit, onLogout: () -> Uni
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
+                }
 
-                    // ✅ Affiche le ❤️ sans conflit ColumnScope
-                    LaunchedEffect(showHeartAnimation) {
-                        if (showHeartAnimation) {
-                            delay(1000)
-                            showHeartAnimation = false
-                        }
+                // ❤️ Animation
+                LaunchedEffect(showHeartAnimation) {
+                    if (showHeartAnimation) {
+                        delay(1000)
+                        showHeartAnimation = false
                     }
+                }
 
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showHeartAnimation,
+                        enter = fadeIn(),
+                        exit = fadeOut()
                     ) {
-                        AnimatedVisibility(
-                            visible = showHeartAnimation,
-                            enter = fadeIn(),
-                            exit = fadeOut()
-                        ) {
-                            Text(
-                                text = "❤️",
-                                style = MaterialTheme.typography.displayLarge
-                            )
-                        }
+                        Text("❤️", style = MaterialTheme.typography.displayLarge)
                     }
                 }
             } ?: Text("❌ Image introuvable", color = MaterialTheme.colorScheme.error)
@@ -235,6 +232,18 @@ fun HomeScreen(user: FirebaseUser, onBackToMenu: () -> Unit, onLogout: () -> Uni
         Spacer(modifier = Modifier.height(24.dp))
         RealtimeDatabaseSection()
     }
+}
+
+// ✅ Redimensionne le bitmap pour éviter le crash
+fun resizeBitmap(bitmap: Bitmap, maxSize: Int): Bitmap {
+    val width = bitmap.width
+    val height = bitmap.height
+
+    val scale = maxSize / maxOf(width, height).toFloat()
+    val newWidth = (width * scale).toInt()
+    val newHeight = (height * scale).toInt()
+
+    return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
 }
 
 fun generateMemeBitmap(baseBitmap: Bitmap, topText: String, bottomText: String): Bitmap {
