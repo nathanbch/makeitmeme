@@ -25,18 +25,16 @@ fun AuthScreen(auth: FirebaseAuth, onAuthComplete: (FirebaseUser) -> Unit) {
     var password by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
+    var isLoginMode by remember { mutableStateOf(true) }
 
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // 🔐 Pour le reset de mot de passe
     var showResetDialog by remember { mutableStateOf(false) }
     var resetEmail by remember { mutableStateOf("") }
 
-    // Snackbar
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // 🔐 Google Sign-In
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
 
@@ -75,7 +73,10 @@ fun AuthScreen(auth: FirebaseAuth, onAuthComplete: (FirebaseUser) -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text("Bienvenue !", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                text = if (isLoginMode) "Connexion" else "Inscription",
+                style = MaterialTheme.typography.headlineMedium
+            )
             Spacer(modifier = Modifier.height(24.dp))
 
             OutlinedTextField(
@@ -113,53 +114,48 @@ fun AuthScreen(auth: FirebaseAuth, onAuthComplete: (FirebaseUser) -> Unit) {
             if (isLoading) {
                 CircularProgressIndicator()
             } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Button(onClick = {
+                Button(
+                    onClick = {
                         if (email.isBlank() || password.isBlank()) {
                             errorMessage = "Email et mot de passe requis."
                             return@Button
                         }
                         isLoading = true
                         errorMessage = null
-                        coroutineScope.launch {
-                            try {
-                                val result = auth.signInWithEmailAndPassword(email, password).await()
-                                onAuthComplete(result.user!!)
-                            } catch (e: FirebaseAuthInvalidCredentialsException) {
-                                errorMessage = "Email ou mot de passe incorrect."
-                            } catch (e: Exception) {
-                                errorMessage = "Échec connexion: ${e.localizedMessage}"
-                            } finally {
-                                isLoading = false
-                            }
-                        }
-                    }) { Text("Connexion") }
 
-                    Button(onClick = {
-                        if (email.isBlank() || password.isBlank()) {
-                            errorMessage = "Email et mot de passe requis."
-                            return@Button
-                        }
-                        isLoading = true
-                        errorMessage = null
                         coroutineScope.launch {
                             try {
-                                val result = auth.createUserWithEmailAndPassword(email, password).await()
+                                val result = if (isLoginMode) {
+                                    auth.signInWithEmailAndPassword(email, password).await()
+                                } else {
+                                    auth.createUserWithEmailAndPassword(email, password).await()
+                                }
                                 onAuthComplete(result.user!!)
                             } catch (e: FirebaseAuthUserCollisionException) {
                                 errorMessage = "Cet email est déjà utilisé."
                             } catch (e: FirebaseAuthWeakPasswordException) {
                                 errorMessage = "Mot de passe trop faible (6 caractères min)."
+                            } catch (e: FirebaseAuthInvalidCredentialsException) {
+                                errorMessage = "Email ou mot de passe incorrect."
                             } catch (e: Exception) {
-                                errorMessage = "Échec inscription: ${e.localizedMessage}"
+                                errorMessage = "Erreur: ${e.localizedMessage}"
                             } finally {
                                 isLoading = false
                             }
                         }
-                    }) { Text("Inscription") }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isLoginMode) "Connexion" else "Créer un compte")
+                }
+
+                TextButton(onClick = { isLoginMode = !isLoginMode }) {
+                    Text(
+                        if (isLoginMode)
+                            "Pas encore inscrit ? Créer un compte"
+                        else
+                            "Déjà un compte ? Se connecter"
+                    )
                 }
 
                 Divider(modifier = Modifier.padding(vertical = 16.dp))
@@ -175,7 +171,6 @@ fun AuthScreen(auth: FirebaseAuth, onAuthComplete: (FirebaseUser) -> Unit) {
                 }
             }
 
-            // 🔁 Boîte de dialogue "Mot de passe oublié"
             if (showResetDialog) {
                 AlertDialog(
                     onDismissRequest = {
@@ -185,17 +180,14 @@ fun AuthScreen(auth: FirebaseAuth, onAuthComplete: (FirebaseUser) -> Unit) {
                     confirmButton = {
                         TextButton(onClick = {
                             if (resetEmail.isBlank()) return@TextButton
-
-                            // Fermer immédiatement la boîte de dialogue
                             showResetDialog = false
                             val emailToSend = resetEmail.trim()
                             resetEmail = ""
 
-                            // Lancer le reset dans une coroutine
                             coroutineScope.launch {
                                 try {
                                     auth.sendPasswordResetEmail(emailToSend).await()
-                                    snackbarHostState.showSnackbar("📧 Email de réinitialisation envoyé ! ( Vérifier vos spams )")
+                                    snackbarHostState.showSnackbar("📧 Email de réinitialisation envoyé !")
                                 } catch (e: Exception) {
                                     snackbarHostState.showSnackbar("❌ ${e.localizedMessage}")
                                 }

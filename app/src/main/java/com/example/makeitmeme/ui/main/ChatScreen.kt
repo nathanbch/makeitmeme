@@ -29,7 +29,7 @@ fun ChatScreen(onBackToMenu: () -> Unit) {
             Text("💬 Chat en ligne", style = MaterialTheme.typography.headlineSmall)
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Tu peux connecter ici ton chat Firebase :
+            // Section de la base de données en temps réel
             RealtimeDatabaseSection()
         }
     }

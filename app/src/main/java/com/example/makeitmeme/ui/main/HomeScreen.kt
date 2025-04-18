@@ -203,34 +203,8 @@ fun HomeScreen(user: FirebaseUser, onBackToMenu: () -> Unit, onLogout: () -> Uni
             ) {
                 Text("📥 Générer / Sauvegarder le mème")
             }
-
-            Button(
-                onClick = {
-                    memeBitmap?.let { safeBitmap ->
-                        val finalBitmap = generateMemeBitmap(safeBitmap, topText, bottomText)
-                        val savedFile = saveBitmapToGallery(context, finalBitmap)
-                        if (savedFile != null) {
-                            changerCount = 0
-                            val publicRef = FirebaseDatabase.getInstance().reference.child("messages").child("public")
-                            val message = ChatMessage(
-                                sender = user.email ?: "inconnu",
-                                text = "🖼️ Mème généré à partir de ${savedFile.name}"
-                            )
-                            publicRef.push().setValue(message)
-                            Toast.makeText(context, "Mème envoyé dans le chat en ligne", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "Erreur lors de l'envoi", Toast.LENGTH_SHORT).show()
-                        }
-                    } ?: Toast.makeText(context, "Erreur : image introuvable", Toast.LENGTH_SHORT).show()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("📨 Envoyer dans le chat en ligne")
-            }
         }
-
         Spacer(modifier = Modifier.height(24.dp))
-        RealtimeDatabaseSection()
     }
 }
 
