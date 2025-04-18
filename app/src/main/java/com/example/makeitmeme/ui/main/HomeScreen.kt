@@ -5,13 +5,18 @@ import android.graphics.BitmapFactory
 import android.media.MediaScannerConnection
 import android.os.Environment
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -19,6 +24,7 @@ import com.example.makeitmeme.R
 import com.example.makeitmeme.data.ChatMessage
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.database.FirebaseDatabase
+import kotlinx.coroutines.delay
 import java.io.File
 import java.io.FileOutputStream
 
@@ -42,25 +48,80 @@ fun HomeScreen(user: FirebaseUser, onBackToMenu: () -> Unit, onLogout: () -> Uni
 
     var topText by remember { mutableStateOf("") }
     var bottomText by remember { mutableStateOf("") }
-
     var changerCount by remember { mutableStateOf(0) }
     val maxChangerCount = 5
+    var liked by remember { mutableStateOf(false) }
+    var showHeartAnimation by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Bienvenue ${user.email}", style = MaterialTheme.typography.titleMedium)
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            IconButton(onClick = onBackToMenu) {
+                Text("←", style = MaterialTheme.typography.titleLarge)
+            }
+
+            OutlinedButton(onClick = onLogout) {
+                Text("Déconnexion")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("Bienvenue ${user.email?.substringBefore("@") ?: "Utilisateur"}", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
         Box(
-            modifier = Modifier.fillMaxWidth().height(300.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(300.dp),
             contentAlignment = Alignment.Center
         ) {
             memeBitmap?.let { bitmap ->
-                Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = "Meme",
-                    modifier = Modifier.matchParentSize(),
-                    contentScale = ContentScale.Crop
-                )
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onDoubleTap = {
+                                    liked = true
+                                    showHeartAnimation = true
+                                }
+                            )
+                        }
+                ) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Meme",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+
+                    // ✅ Affiche le ❤️ sans conflit ColumnScope
+                    LaunchedEffect(showHeartAnimation) {
+                        if (showHeartAnimation) {
+                            delay(1000)
+                            showHeartAnimation = false
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AnimatedVisibility(
+                            visible = showHeartAnimation,
+                            enter = fadeIn(),
+                            exit = fadeOut()
+                        ) {
+                            Text(
+                                text = "❤️",
+                                style = MaterialTheme.typography.displayLarge
+                            )
+                        }
+                    }
+                }
             } ?: Text("❌ Image introuvable", color = MaterialTheme.colorScheme.error)
 
             Column(
@@ -74,6 +135,15 @@ fun HomeScreen(user: FirebaseUser, onBackToMenu: () -> Unit, onLogout: () -> Uni
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+
+        if (liked) {
+            Text(
+                text = "🧡 ${user.email?.substringBefore("@")} a liké cette image !",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
 
         OutlinedTextField(
             value = topText,
@@ -89,9 +159,12 @@ fun HomeScreen(user: FirebaseUser, onBackToMenu: () -> Unit, onLogout: () -> Uni
             modifier = Modifier.fillMaxWidth()
         )
 
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Button(
                 onClick = {
@@ -102,6 +175,7 @@ fun HomeScreen(user: FirebaseUser, onBackToMenu: () -> Unit, onLogout: () -> Uni
                             topText = ""
                             bottomText = ""
                             changerCount++
+                            liked = false
                         } else {
                             Toast.makeText(context, "Aucune autre image disponible", Toast.LENGTH_SHORT).show()
                         }
@@ -110,73 +184,56 @@ fun HomeScreen(user: FirebaseUser, onBackToMenu: () -> Unit, onLogout: () -> Uni
                     }
                 },
                 enabled = changerCount < maxChangerCount,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text("🔁 Changer le mème ($changerCount/$maxChangerCount)")
             }
 
             Button(
-                onClick = onBackToMenu,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                onClick = {
+                    memeBitmap?.let { safeBitmap ->
+                        val finalBitmap = generateMemeBitmap(safeBitmap, topText, bottomText)
+                        val savedFile = saveBitmapToGallery(context, finalBitmap)
+                        if (savedFile != null) {
+                            changerCount = 0
+                            Toast.makeText(context, "Image sauvegardée : ${savedFile.absolutePath}", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, "Erreur lors de la sauvegarde", Toast.LENGTH_SHORT).show()
+                        }
+                    } ?: Toast.makeText(context, "Erreur : image introuvable", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("⬅️ Retour au menu")
+                Text("📥 Générer / Sauvegarder le mème")
+            }
+
+            Button(
+                onClick = {
+                    memeBitmap?.let { safeBitmap ->
+                        val finalBitmap = generateMemeBitmap(safeBitmap, topText, bottomText)
+                        val savedFile = saveBitmapToGallery(context, finalBitmap)
+                        if (savedFile != null) {
+                            changerCount = 0
+                            val publicRef = FirebaseDatabase.getInstance().reference.child("messages").child("public")
+                            val message = ChatMessage(
+                                sender = user.email ?: "inconnu",
+                                text = "🖼️ Mème généré à partir de ${savedFile.name}"
+                            )
+                            publicRef.push().setValue(message)
+                            Toast.makeText(context, "Mème envoyé dans le chat en ligne", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Erreur lors de l'envoi", Toast.LENGTH_SHORT).show()
+                        }
+                    } ?: Toast.makeText(context, "Erreur : image introuvable", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("📨 Envoyer dans le chat en ligne")
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(
-            onClick = {
-                memeBitmap?.let { safeBitmap ->
-                    val finalBitmap = generateMemeBitmap(safeBitmap, topText, bottomText)
-                    val savedFile = saveBitmapToGallery(context, finalBitmap)
-                    if (savedFile != null) {
-                        changerCount = 0
-                        Toast.makeText(context, "Image sauvegardée : ${savedFile.absolutePath}", Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(context, "Erreur lors de la sauvegarde", Toast.LENGTH_SHORT).show()
-                    }
-                } ?: Toast.makeText(context, "Erreur : image introuvable", Toast.LENGTH_SHORT).show()
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
-        ) {
-            Text("Générer / Sauvegarder le mème")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(
-            onClick = {
-                memeBitmap?.let { safeBitmap ->
-                    val finalBitmap = generateMemeBitmap(safeBitmap, topText, bottomText)
-                    val savedFile = saveBitmapToGallery(context, finalBitmap)
-                    if (savedFile != null) {
-                        changerCount = 0
-                        val publicRef = FirebaseDatabase.getInstance().reference.child("messages").child("public")
-                        val message = ChatMessage(
-                            sender = user.email ?: "inconnu",
-                            text = "🖼️ Mème généré à partir de ${savedFile.name}"
-                        )
-                        publicRef.push().setValue(message)
-                        Toast.makeText(context, "Mème envoyé dans le chat en ligne", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "Erreur lors de l'envoi", Toast.LENGTH_SHORT).show()
-                    }
-                } ?: Toast.makeText(context, "Erreur : image introuvable", Toast.LENGTH_SHORT).show()
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("📨 Envoyer dans le chat en ligne")
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
         RealtimeDatabaseSection()
-        Spacer(modifier = Modifier.weight(1f))
-
-        Button(onClick = onLogout, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-            Text("Déconnexion")
-        }
     }
 }
 
